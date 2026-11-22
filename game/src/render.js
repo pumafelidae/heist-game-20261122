@@ -1,7 +1,7 @@
 // render.js — everything the player sees: museum, cones, HUD, screens.
 // One job: drawing. No game logic, no input, no sound.
 
-import { VIEW_W, VIEW_H, HUD_H, FIELD, COLORS, ALARM_DANGER, GUARD_CONE_RANGE, GUARD_CONE_HALF, CAMERA_RANGE, CAMERA_CONE_HALF } from './config.js';
+import { VIEW_W, VIEW_H, HUD_H, FIELD, COLORS, ALARM_DANGER, GUARD_CONE_RANGE, GUARD_CONE_HALF, CAMERA_RANGE, CAMERA_CONE_HALF, CAMERA_SWEEP } from './config.js';
 import { roomLootLeft } from './world.js';
 
 function conePath(ctx, x, y, angle, half, range) {
@@ -11,23 +11,122 @@ function conePath(ctx, x, y, angle, half, range) {
   ctx.closePath();
 }
 
+// Deterministic 0..1 hash of integer tile coords — same floor every run.
+function hash2(x, y) {
+  let h = (x * 374761393 + y * 668265263) ^ 0x5bf03635;
+  h = Math.imul(h ^ (h >>> 13), 1274126177);
+  return ((h ^ (h >>> 16)) >>> 0) / 4294967295;
+}
+
+function shade(hex, amt) {
+  const n = parseInt(hex.slice(1), 16);
+  const r = Math.max(0, Math.min(255, (n >> 16) + amt));
+  const g = Math.max(0, Math.min(255, ((n >> 8) & 255) + amt));
+  const b = Math.max(0, Math.min(255, (n & 255) + amt));
+  return `rgb(${r},${g},${b})`;
+}
+
 function drawFloor(ctx, room, t) {
-  // Marble checker.
-  const tile = 76;
-  for (let y = FIELD.y; y < FIELD.y + FIELD.h; y += tile) {
-    for (let x = FIELD.x; x < FIELD.x + FIELD.w; x += tile) {
-      const even = ((x - FIELD.x) / tile + (y - FIELD.y) / tile) % 2 === 0;
-      ctx.fillStyle = even ? COLORS.floorA : COLORS.floorB;
-      ctx.fillRect(x, y, tile, tile);
+  const floor = room.floor || 'stone';
+  if (floor === 'wood') {
+    // Warm wood planks: horizontal boards with grain and per-board shade.
+    const plankH = 38;
+    let row = 0;
+    for (let y = FIELD.y; y < FIELD.y + FIELD.h; y += plankH, row++) {
+      const segs = 3;
+      for (let s = 0; s < segs; s++) {
+        const x0 = FIELD.x + (FIELD.w / segs) * s;
+        const w = FIELD.w / segs;
+        const v = hash2(row, s) - 0.5;
+        ctx.fillStyle = shade(v > 0 ? COLORS.woodA : COLORS.woodB, Math.round(v * 22));
+        ctx.fillRect(x0, y, w, plankH);
+        // Grain: two wavy dark lines per board, deterministic.
+        ctx.strokeStyle = COLORS.woodLine;
+        ctx.lineWidth = 1;
+        for (let gLine = 0; gLine < 2; gLine++) {
+          const gy = y + 8 + gLine * 14 + hash2(row, s * 7 + gLine) * 6;
+          ctx.beginPath();
+          ctx.moveTo(x0 + 4, gy);
+          ctx.quadraticCurveTo(x0 + w / 2, gy + (hash2(row, s + gLine) - 0.5) * 6, x0 + w - 4, gy);
+          ctx.stroke();
+        }
+      }
+      ctx.fillStyle = COLORS.woodLine;
+      ctx.fillRect(FIELD.x, y + plankH - 1, FIELD.w, 1);
     }
-  }
-  ctx.strokeStyle = COLORS.grout;
-  ctx.lineWidth = 1;
-  for (let x = FIELD.x; x <= FIELD.x + FIELD.w; x += tile) {
-    ctx.beginPath(); ctx.moveTo(x, FIELD.y); ctx.lineTo(x, FIELD.y + FIELD.h); ctx.stroke();
-  }
-  for (let y = FIELD.y; y <= FIELD.y + FIELD.h; y += tile) {
-    ctx.beginPath(); ctx.moveTo(FIELD.x, y); ctx.lineTo(FIELD.x + FIELD.w, y); ctx.stroke();
+    // Board joints: staggered vertical seams.
+    ctx.fillStyle = COLORS.woodLine;
+    for (let r = 0; r < Math.ceil(FIELD.h / plankH); r++) {
+      const jx = FIELD.x + ((r % 3) + 1) * (FIELD.w / 4);
+      ctx.fillRect(jx, FIELD.y + r * plankH, 1, plankH);
+    }
+  } else if (floor === 'marble') {
+    // Dark marble: big tiles, gold veining, gold trim around the field.
+    const tile = 76;
+    for (let y = FIELD.y; y < FIELD.y + FIELD.h; y += tile) {
+      for (let x = FIELD.x; x < FIELD.x + FIELD.w; x += tile) {
+        const v = hash2((x - FIELD.x) / tile, (y - FIELD.y) / tile) - 0.5;
+        ctx.fillStyle = shade(v > 0 ? COLORS.marbleA : COLORS.marbleB, Math.round(v * 14));
+        ctx.fillRect(x, y, tile, tile);
+        // One diagonal gold vein per tile, deterministic angle.
+        const a = hash2(x, y) * Math.PI;
+        ctx.strokeStyle = COLORS.marbleVein;
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(x + 8, y + 8 + Math.sin(a) * 20);
+        ctx.lineTo(x + tile - 8, y + tile - 8 - Math.cos(a) * 20);
+        ctx.stroke();
+      }
+    }
+    ctx.strokeStyle = COLORS.grout;
+    ctx.lineWidth = 1;
+    for (let x = FIELD.x; x <= FIELD.x + FIELD.w; x += tile) {
+      ctx.beginPath(); ctx.moveTo(x, FIELD.y); ctx.lineTo(x, FIELD.y + FIELD.h); ctx.stroke();
+    }
+    for (let y = FIELD.y; y <= FIELD.y + FIELD.h; y += tile) {
+      ctx.beginPath(); ctx.moveTo(FIELD.x, y); ctx.lineTo(FIELD.x + FIELD.w, y); ctx.stroke();
+    }
+    // Gold trim border around the vault floor.
+    ctx.strokeStyle = COLORS.marbleGold;
+    ctx.lineWidth = 2;
+    ctx.strokeRect(FIELD.x + 6, FIELD.y + 6, FIELD.w - 12, FIELD.h - 12);
+  } else {
+    // Polished stone: tiles with shade variation + faint veins.
+    const tile = 76;
+    for (let y = FIELD.y; y < FIELD.y + FIELD.h; y += tile) {
+      for (let x = FIELD.x; x < FIELD.x + FIELD.w; x += tile) {
+        const v = hash2((x - FIELD.x) / tile, (y - FIELD.y) / tile) - 0.5;
+        ctx.fillStyle = shade(v > 0 ? COLORS.stoneA : COLORS.stoneB, Math.round(v * 12));
+        ctx.fillRect(x, y, tile, tile);
+        ctx.strokeStyle = COLORS.stoneVein;
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.arc(x + tile / 2, y + tile / 2, 20 + hash2(x, y) * 18, hash2(y, x) * 3, hash2(y, x) * 3 + 2.2);
+        ctx.stroke();
+      }
+    }
+    ctx.strokeStyle = COLORS.grout;
+    ctx.lineWidth = 1;
+    for (let x = FIELD.x; x <= FIELD.x + FIELD.w; x += tile) {
+      ctx.beginPath(); ctx.moveTo(x, FIELD.y); ctx.lineTo(x, FIELD.y + FIELD.h); ctx.stroke();
+    }
+    for (let y = FIELD.y; y <= FIELD.y + FIELD.h; y += tile) {
+      ctx.beginPath(); ctx.moveTo(FIELD.x, y); ctx.lineTo(FIELD.x + FIELD.w, y); ctx.stroke();
+    }
+    // Red rugs with gold borders under the paintings.
+    for (const p of room.paintings) {
+      const ry = p.y < 300 ? p.y + p.h + 16 : p.y - 64;
+      ctx.fillStyle = COLORS.rug;
+      ctx.fillRect(p.x + 6, ry, p.w - 12, 48);
+      ctx.strokeStyle = COLORS.rugEdge;
+      ctx.lineWidth = 2;
+      ctx.strokeRect(p.x + 6, ry, p.w - 12, 48);
+      ctx.fillStyle = COLORS.rugInner;
+      ctx.fillRect(p.x + 16, ry + 8, p.w - 32, 32);
+      ctx.strokeStyle = COLORS.rugEdge;
+      ctx.lineWidth = 1;
+      ctx.strokeRect(p.x + 16, ry + 8, p.w - 32, 32);
+    }
   }
   // Warm spotlight pools under the ceiling lamps.
   for (const lx of [220, 640, 1060]) {
@@ -43,7 +142,38 @@ function drawFloor(ctx, room, t) {
   ctx.strokeStyle = COLORS.carpetEdge;
   ctx.lineWidth = 3;
   ctx.strokeRect(FIELD.x + 560, FIELD.y, 88, FIELD.h);
+  ctx.fillStyle = COLORS.carpetEdge;
+  ctx.fillRect(FIELD.x + 560, FIELD.y, 88, 4);
+  ctx.fillRect(FIELD.x + 560, FIELD.y + FIELD.h - 4, 88, 4);
+  // Wall shadows: soft dark gradient just inside the field edges.
+  const sh = ctx.createLinearGradient(0, FIELD.y, 0, FIELD.y + 26);
+  sh.addColorStop(0, COLORS.wallShadow);
+  sh.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = sh;
+  ctx.fillRect(FIELD.x, FIELD.y, FIELD.w, 26);
+  const sh2 = ctx.createLinearGradient(0, FIELD.y + FIELD.h, 0, FIELD.y + FIELD.h - 26);
+  sh2.addColorStop(0, COLORS.wallShadow);
+  sh2.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = sh2;
+  ctx.fillRect(FIELD.x, FIELD.y + FIELD.h - 26, FIELD.w, 26);
   void t;
+}
+
+// Drifting dust motes in the lamplight — deterministic, no RNG state.
+function drawDust(ctx, t) {
+  ctx.fillStyle = COLORS.dust;
+  for (let i = 0; i < 42; i++) {
+    const bx = FIELD.x + hash2(i, 11) * FIELD.w;
+    const by = FIELD.y + hash2(i, 23) * FIELD.h;
+    const x = bx + Math.sin(t * 0.12 + i * 1.7) * 14;
+    const y = by + Math.cos(t * 0.09 + i * 2.3) * 10;
+    const a = 0.05 + 0.09 * (0.5 + 0.5 * Math.sin(t * 0.7 + i));
+    ctx.globalAlpha = a;
+    ctx.beginPath();
+    ctx.arc(x, y, 1 + hash2(i, 5) * 1.4, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
 }
 
 function drawWalls(ctx, room) {
@@ -67,23 +197,72 @@ function drawWalls(ctx, room) {
 }
 
 function drawPaintings(ctx, room) {
-  for (const p of room.paintings) {
-    ctx.fillStyle = '#3a2c12';
-    ctx.fillRect(p.x - 4, p.y - 4, p.w + 8, p.h + 8);
+  room.paintings.forEach((p, i) => {
+    // Ornate frame: dark outer, gold inner line, corner studs.
+    ctx.fillStyle = COLORS.frameDark;
+    ctx.fillRect(p.x - 5, p.y - 5, p.w + 10, p.h + 10);
+    ctx.strokeStyle = COLORS.frameGold;
+    ctx.lineWidth = 2;
+    ctx.strokeRect(p.x - 5, p.y - 5, p.w + 10, p.h + 10);
+    ctx.fillStyle = COLORS.gold;
+    for (const [cx, cy] of [[p.x - 5, p.y - 5], [p.x + p.w + 5, p.y - 5], [p.x - 5, p.y + p.h + 5], [p.x + p.w + 5, p.y + p.h + 5]]) {
+      ctx.beginPath(); ctx.arc(cx, cy, 2.5, 0, Math.PI * 2); ctx.fill();
+    }
+    // Canvas.
     ctx.fillStyle = `hsl(${p.hue}, 45%, 32%)`;
     ctx.fillRect(p.x, p.y, p.w, p.h);
-    ctx.fillStyle = `hsl(${p.hue + 40}, 60%, 55%)`;
-    ctx.beginPath();
-    ctx.moveTo(p.x + 12, p.y + p.h - 10);
-    ctx.lineTo(p.x + p.w * 0.45, p.y + 12);
-    ctx.lineTo(p.x + p.w - 14, p.y + p.h - 10);
-    ctx.closePath();
-    ctx.fill();
-    ctx.fillStyle = 'rgba(255, 220, 120, 0.85)';
-    ctx.beginPath();
-    ctx.arc(p.x + p.w - 22, p.y + 16, 7, 0, Math.PI * 2);
-    ctx.fill();
-  }
+    const style = i % 4;
+    if (style === 0) {
+      // Mountain + sun.
+      ctx.fillStyle = `hsl(${p.hue + 40}, 60%, 55%)`;
+      ctx.beginPath();
+      ctx.moveTo(p.x + 12, p.y + p.h - 10);
+      ctx.lineTo(p.x + p.w * 0.45, p.y + 12);
+      ctx.lineTo(p.x + p.w - 14, p.y + p.h - 10);
+      ctx.closePath();
+      ctx.fill();
+      ctx.fillStyle = 'rgba(255, 220, 120, 0.85)';
+      ctx.beginPath();
+      ctx.arc(p.x + p.w - 22, p.y + 16, 7, 0, Math.PI * 2);
+      ctx.fill();
+    } else if (style === 1) {
+      // Waves: three arcs.
+      ctx.strokeStyle = `hsl(${p.hue + 60}, 65%, 65%)`;
+      ctx.lineWidth = 4;
+      for (let w = 0; w < 3; w++) {
+        ctx.beginPath();
+        ctx.arc(p.x + p.w / 2, p.y + p.h + 6 - w * 14, 22 + w * 10, Math.PI, Math.PI * 2);
+        ctx.stroke();
+      }
+      ctx.fillStyle = 'rgba(255, 220, 120, 0.9)';
+      ctx.beginPath();
+      ctx.arc(p.x + 20, p.y + 14, 6, 0, Math.PI * 2);
+      ctx.fill();
+    } else if (style === 2) {
+      // Portrait: head + shoulders.
+      ctx.fillStyle = `hsl(${p.hue + 30}, 50%, 60%)`;
+      ctx.beginPath();
+      ctx.arc(p.x + p.w / 2, p.y + 20, 10, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.moveTo(p.x + p.w / 2 - 20, p.y + p.h - 8);
+      ctx.quadraticCurveTo(p.x + p.w / 2, p.y + 22, p.x + p.w / 2 + 20, p.y + p.h - 8);
+      ctx.closePath();
+      ctx.fill();
+      ctx.fillStyle = 'rgba(255, 220, 120, 0.8)';
+      ctx.fillRect(p.x + 8, p.y + 8, 4, p.h - 16);
+    } else {
+      // Abstract: bold blocks.
+      ctx.fillStyle = `hsl(${p.hue + 120}, 70%, 55%)`;
+      ctx.fillRect(p.x + 10, p.y + 10, p.w * 0.3, p.h - 20);
+      ctx.fillStyle = `hsl(${p.hue + 200}, 65%, 60%)`;
+      ctx.beginPath();
+      ctx.arc(p.x + p.w * 0.65, p.y + p.h / 2, 13, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = 'rgba(255, 220, 120, 0.9)';
+      ctx.fillRect(p.x + p.w - 26, p.y + 10, 12, p.h - 20);
+    }
+  });
 }
 
 function drawPedestals(ctx, room, t) {
@@ -102,19 +281,98 @@ function drawPedestals(ctx, room, t) {
       ctx.beginPath();
       ctx.ellipse(p.x + p.w / 2, p.y + p.h / 2, 12, 18, 0, 0, Math.PI * 2);
       ctx.fill();
+      ctx.fillStyle = 'rgba(255,255,255,0.35)';
+      ctx.beginPath();
+      ctx.ellipse(p.x + p.w / 2 - 4, p.y + p.h / 2 - 6, 3, 7, 0, 0, Math.PI * 2);
+      ctx.fill();
     } else if (p.kind === 'statue') {
       ctx.fillStyle = '#b8a888';
       ctx.fillRect(p.x + p.w / 2 - 8, p.y + 12, 16, 30);
       ctx.beginPath();
       ctx.arc(p.x + p.w / 2, p.y + 12, 9, 0, Math.PI * 2);
       ctx.fill();
+      ctx.fillStyle = 'rgba(255,255,255,0.25)';
+      ctx.fillRect(p.x + p.w / 2 - 8, p.y + 12, 4, 30);
+    } else if (p.kind === 'desk') {
+      // Ticket desk: counter + sign board + ticket stubs.
+      ctx.fillStyle = '#5a3a22';
+      ctx.fillRect(p.x + 8, p.y + 14, p.w - 16, p.h - 24);
+      ctx.fillStyle = '#e8e2c8';
+      ctx.fillRect(p.x + p.w / 2 - 18, p.y + 20, 36, 12);
+      ctx.fillStyle = '#8e1f2f';
+      ctx.font = 'bold 8px system-ui, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('TIKET', p.x + p.w / 2, p.y + 29);
+      ctx.fillStyle = '#e8e2c8';
+      for (let s = 0; s < 3; s++) ctx.fillRect(p.x + 16 + s * 24, p.y + p.h - 14, 14, 6);
+    } else if (p.kind === 'shop') {
+      // Gift counter: colourful souvenir dots.
+      const cols = ['#d93a2b', '#58b368', '#e8c15a', '#7a9cc6'];
+      for (let s = 0; s < 4; s++) {
+        ctx.fillStyle = cols[s];
+        ctx.beginPath();
+        ctx.arc(p.x + 18 + s * 24, p.y + p.h / 2 + 4, 8, 0, Math.PI * 2);
+        ctx.fill();
+      }
     } else if (p.kind === 'garuda') {
-      // The Garuda Mas plinth: a wide golden bird on a dark slab.
+      // The Garuda Mas plinth: a wide golden bird on a dark slab,
+      // gold-bar stacks at both ends, red laser beams across the slab.
       ctx.fillStyle = '#1a1d2e';
       ctx.fillRect(p.x + 10, p.y + 12, p.w - 20, p.h - 24);
       ctx.strokeStyle = COLORS.gold;
       ctx.lineWidth = 2;
       ctx.strokeRect(p.x + 10, p.y + 12, p.w - 20, p.h - 24);
+      // Gold bars stacked at the slab ends.
+      for (const bx of [p.x + 16, p.x + p.w - 34]) {
+        ctx.fillStyle = COLORS.goldBarDark;
+        ctx.fillRect(bx, p.y + p.h - 26, 18, 8);
+        ctx.fillStyle = COLORS.goldBar;
+        ctx.fillRect(bx + 2, p.y + p.h - 33, 14, 7);
+      }
+      // Laser grid: two pulsing red beams across the slab + emitters.
+      const pulse = 0.55 + 0.35 * Math.sin(t * 5);
+      ctx.strokeStyle = `rgba(255, 60, 60, ${pulse})`;
+      ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(p.x + 10, p.y + 18); ctx.lineTo(p.x + p.w - 10, p.y + p.h - 18); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(p.x + p.w - 10, p.y + 18); ctx.lineTo(p.x + 10, p.y + p.h - 18); ctx.stroke();
+      ctx.fillStyle = '#ff3c3c';
+      for (const [ex, ey] of [[p.x + 10, p.y + 18], [p.x + p.w - 10, p.y + 18], [p.x + 10, p.y + p.h - 18], [p.x + p.w - 10, p.y + p.h - 18]]) {
+        ctx.beginPath(); ctx.arc(ex, ey, 3, 0, Math.PI * 2); ctx.fill();
+      }
+    }
+  }
+  // Non-solid decor: benches and potted plants (drawn after pedestals).
+  for (const d of room.decor || []) {
+    if (d.kind === 'bench') {
+      ctx.fillStyle = 'rgba(0,0,0,0.35)';
+      ctx.fillRect(d.x + 3, d.y + 4, 84, 22);
+      ctx.fillStyle = COLORS.benchWood;
+      ctx.fillRect(d.x, d.y, 84, 16);
+      ctx.fillStyle = COLORS.benchWood2;
+      ctx.fillRect(d.x, d.y, 84, 4);
+      ctx.fillRect(d.x + 4, d.y + 16, 6, 8);
+      ctx.fillRect(d.x + 74, d.y + 16, 6, 8);
+    } else if (d.kind === 'plant') {
+      ctx.fillStyle = 'rgba(0,0,0,0.35)';
+      ctx.beginPath(); ctx.ellipse(d.x + 3, d.y + 26, 16, 6, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = COLORS.plantGreen;
+      for (const [lx, ly, lr] of [[-8, -14, 9], [0, -22, 10], [9, -13, 8], [-3, -8, 7], [5, -6, 6]]) {
+        ctx.beginPath();
+        ctx.ellipse(d.x + lx, d.y + ly, lr * 0.55, lr, lx * 0.06, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.fillStyle = COLORS.plantGreen2;
+      ctx.beginPath();
+      ctx.ellipse(d.x + 2, d.y - 10, 5, 9, 0.2, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = COLORS.plantPot;
+      ctx.beginPath();
+      ctx.moveTo(d.x - 12, d.y);
+      ctx.lineTo(d.x + 12, d.y);
+      ctx.lineTo(d.x + 8, d.y + 18);
+      ctx.lineTo(d.x - 8, d.y + 18);
+      ctx.closePath();
+      ctx.fill();
     }
   }
   for (const r of room.ropes) {
@@ -155,11 +413,23 @@ function drawLoot(ctx, room, t) {
     if (loot.taken) continue;
     const pulse = 1 + Math.sin(t * 3 + loot.x) * 0.12;
     const r = (loot.garuda ? 26 : 14) * pulse;
-    const g = ctx.createRadialGradient(loot.x, loot.y, 2, loot.x, loot.y, r * 2.4);
-    g.addColorStop(0, 'rgba(255, 217, 77, 0.55)');
+    // Stronger halo + orbiting sparkles so loot pops off the floor.
+    const g = ctx.createRadialGradient(loot.x, loot.y, 2, loot.x, loot.y, r * 3);
+    g.addColorStop(0, 'rgba(255, 217, 77, 0.7)');
+    g.addColorStop(0.45, 'rgba(255, 217, 77, 0.22)');
     g.addColorStop(1, 'rgba(255, 217, 77, 0)');
     ctx.fillStyle = g;
-    ctx.beginPath(); ctx.arc(loot.x, loot.y, r * 2.4, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(loot.x, loot.y, r * 3, 0, Math.PI * 2); ctx.fill();
+    for (let s = 0; s < 3; s++) {
+      const sa = t * 1.4 + loot.x + (s * Math.PI * 2) / 3;
+      const sx = loot.x + Math.cos(sa) * r * 1.7;
+      const sy = loot.y + Math.sin(sa) * r * 1.7;
+      const tw = 0.4 + 0.6 * (0.5 + 0.5 * Math.sin(t * 5 + s * 2.1 + loot.x));
+      ctx.globalAlpha = tw;
+      ctx.fillStyle = '#ffe98a';
+      ctx.beginPath(); ctx.arc(sx, sy, 2, 0, Math.PI * 2); ctx.fill();
+      ctx.globalAlpha = 1;
+    }
     if (loot.garuda) {
       // Stylised golden garuda: spread wings + head.
       ctx.fillStyle = COLORS.gold;
@@ -188,18 +458,18 @@ function drawLoot(ctx, room, t) {
       ctx.fill();
     }
     ctx.fillStyle = '#1c2138';
-    ctx.font = 'bold 10px system-ui, sans-serif';
+    ctx.font = 'bold 11px system-ui, sans-serif';
     ctx.textAlign = 'center';
     const label = loot.garuda ? 'GARUDA MAS' : loot.name.toUpperCase();
     const ly = loot.y + (loot.garuda ? 34 : 24);
-    const lw = ctx.measureText(label).width + 12;
-    ctx.fillStyle = 'rgba(8, 10, 20, 0.85)';
-    ctx.fillRect(loot.x - lw / 2, ly - 9, lw, 16);
-    ctx.strokeStyle = COLORS.goldDim;
-    ctx.lineWidth = 1;
-    ctx.strokeRect(loot.x - lw / 2, ly - 9, lw, 16);
+    const lw = ctx.measureText(label).width + 14;
+    ctx.fillStyle = 'rgba(8, 10, 20, 0.9)';
+    ctx.fillRect(loot.x - lw / 2, ly - 9, lw, 17);
+    ctx.strokeStyle = COLORS.gold;
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(loot.x - lw / 2, ly - 9, lw, 17);
     ctx.fillStyle = COLORS.gold;
-    ctx.fillText(label, loot.x, ly + 3);
+    ctx.fillText(label, loot.x, ly + 4);
   }
 }
 
@@ -218,15 +488,28 @@ function drawCones(ctx, guards, cameras) {
   }
 }
 
-function drawCameras(ctx, cameras) {
+function drawCameras(ctx, cameras, t) {
   for (const cam of cameras) {
+    // Faint arc showing the full sweep extent.
+    ctx.strokeStyle = 'rgba(140, 220, 255, 0.07)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.arc(cam.x, cam.y, CAMERA_RANGE, cam.base - CAMERA_SWEEP - CAMERA_CONE_HALF, cam.base + CAMERA_SWEEP + CAMERA_CONE_HALF);
+    ctx.stroke();
     ctx.save();
     ctx.translate(cam.x, cam.y);
     ctx.rotate(cam.angle);
+    // Wall mount bracket.
+    ctx.fillStyle = '#3a4152';
+    ctx.fillRect(-10, -3, 8, 6);
     ctx.fillStyle = cam.disabled > 0 ? '#555' : '#c8d8e8';
     ctx.fillRect(-4, -6, 18, 12);
     ctx.fillStyle = cam.disabled > 0 ? '#333' : '#d93a2b';
+    // Blinking red lens.
+    const blink = cam.disabled > 0 ? 0.3 : (Math.sin(t * 4 + cam.id * 1.7) > 0 ? 1 : 0.25);
+    ctx.globalAlpha = blink;
     ctx.beginPath(); ctx.arc(14, 0, 4, 0, Math.PI * 2); ctx.fill();
+    ctx.globalAlpha = 1;
     ctx.restore();
     if (cam.disabled > 0) {
       ctx.fillStyle = '#9fb4c8';
@@ -235,6 +518,7 @@ function drawCameras(ctx, cameras) {
       ctx.fillText('EMP ' + Math.ceil(cam.disabled) + 's', cam.x, cam.y + 22);
     }
   }
+  void t;
 }
 
 function drawGuards(ctx, guards) {
@@ -246,14 +530,28 @@ function drawGuards(ctx, guards) {
     ctx.strokeStyle = '#d8e2f2';
     ctx.lineWidth = 2;
     ctx.beginPath(); ctx.arc(g.x, g.y, 13, 0, Math.PI * 2); ctx.stroke();
-    // Facing tick + cap.
+    // Uniform belt.
+    ctx.strokeStyle = COLORS.guardBelt;
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(g.x - 10, g.y + 4);
+    ctx.lineTo(g.x + 10, g.y + 4);
+    ctx.stroke();
+    // Facing tick.
     ctx.strokeStyle = '#d8e2f2';
+    ctx.lineWidth = 2;
     ctx.beginPath();
     ctx.moveTo(g.x, g.y);
     ctx.lineTo(g.x + Math.cos(g.angle) * 18, g.y + Math.sin(g.angle) * 18);
     ctx.stroke();
-    ctx.fillStyle = '#d8e2f2';
-    ctx.beginPath(); ctx.arc(g.x, g.y - 3, 5, Math.PI, 0); ctx.fill();
+    // Peaked cap: dome + brim, turned to the facing angle.
+    ctx.save();
+    ctx.translate(g.x, g.y);
+    ctx.rotate(g.angle);
+    ctx.fillStyle = COLORS.guardCap;
+    ctx.beginPath(); ctx.arc(-2, 0, 6, Math.PI * 0.5, Math.PI * 1.5); ctx.fill();
+    ctx.fillRect(-8, -6, 6, 12);
+    ctx.restore();
     if (g.state === 'suspect') {
       ctx.fillStyle = '#ffd94d';
       ctx.font = 'bold 18px system-ui, sans-serif';
@@ -343,17 +641,22 @@ function drawHud(ctx, game) {
   ctx.fillStyle = COLORS.hudText;
   ctx.font = '13px system-ui, sans-serif';
   ctx.fillText(`Ruangan ${s.roomIndex + 1}/3 · tersisa ${roomLootLeft(s)}`, 330, 44);
-  // Center: alarm meter.
+  // Center: alarm meter — pulses red when high.
   const ax = 520;
   const aw = 260;
   ctx.fillStyle = COLORS.hudText;
   ctx.font = 'bold 13px system-ui, sans-serif';
   ctx.textAlign = 'center';
   ctx.fillText('ALARM', ax + aw / 2, 14);
-  ctx.fillStyle = '#22263a';
-  ctx.fillRect(ax, 24, aw, 16);
   const frac = s.alarm / 100;
   const col = frac < 0.4 ? COLORS.alarmLow : frac < ALARM_DANGER / 100 ? COLORS.alarmMid : COLORS.alarmHigh;
+  if (frac >= ALARM_DANGER / 100) {
+    const pulse = 0.35 + 0.3 * (0.5 + 0.5 * Math.sin(game.t * 8));
+    ctx.fillStyle = `rgba(217, 58, 43, ${pulse})`;
+    ctx.fillRect(ax - 4, 20, aw + 8, 24);
+  }
+  ctx.fillStyle = '#22263a';
+  ctx.fillRect(ax, 24, aw, 16);
   ctx.fillStyle = col;
   ctx.fillRect(ax, 24, aw * frac, 16);
   ctx.strokeStyle = '#e8e2c8';
@@ -365,7 +668,7 @@ function drawHud(ctx, game) {
   ctx.fillStyle = COLORS.hudText;
   ctx.font = '12px system-ui, sans-serif';
   ctx.fillText(s.alarm >= ALARM_DANGER ? 'TERLIHAT! SEMBUNYI!' : 'belum ketahuan', ax + aw / 2, 52);
-  // Right: score, time, lives, tools.
+  // Right: score, time, lives, tools as coloured chips.
   ctx.textAlign = 'right';
   ctx.fillStyle = COLORS.gold;
   ctx.font = 'bold 18px system-ui, sans-serif';
@@ -375,14 +678,35 @@ function drawHud(ctx, game) {
   const mm = Math.floor(s.time / 60);
   const ss = Math.floor(s.time % 60).toString().padStart(2, '0');
   ctx.fillText(`${mm}:${ss}  ·  ` + '♥'.repeat(s.lives) + '♡'.repeat(3 - s.lives), 1262, 40);
-  ctx.fillStyle = COLORS.hudText;
-  ctx.font = '12px system-ui, sans-serif';
   const p = game.player;
-  ctx.fillText(`[1] Asap ${p.smoke}   [2] EMP ${p.emp}   [3] Samaran ${p.disguise}`, 1262, 56);
+  const tools = [
+    { key: '[1]', name: 'Asap', n: p.smoke, color: COLORS.toolSmoke },
+    { key: '[2]', name: 'EMP', n: p.emp, color: COLORS.toolEmp },
+    { key: '[3]', name: 'Samaran', n: p.disguise, color: COLORS.toolDisguise },
+  ];
+  ctx.font = 'bold 12px system-ui, sans-serif';
+  let tx = 1262;
+  for (const tool of tools) {
+    const label = `${tool.key} ${tool.name} ${tool.n}`;
+    const tw = ctx.measureText(label).width + 12;
+    ctx.fillStyle = 'rgba(255,255,255,0.08)';
+    ctx.fillRect(tx - tw, 48, tw, 16);
+    ctx.fillStyle = tool.color;
+    ctx.fillRect(tx - tw, 48, 3, 16);
+    ctx.fillStyle = tool.n > 0 ? COLORS.hudText : '#6a7086';
+    ctx.fillText(label, tx - 6, 56);
+    tx -= tw + 6;
+  }
   ctx.textAlign = 'left';
 }
 
 function drawVignette(ctx, alarm, flash, t) {
+  // Always-on soft vignette for night-museum atmosphere.
+  const base = ctx.createRadialGradient(640, 370, 260, 640, 370, 720);
+  base.addColorStop(0, 'rgba(0, 0, 0, 0)');
+  base.addColorStop(1, 'rgba(0, 0, 0, 0.22)');
+  ctx.fillStyle = base;
+  ctx.fillRect(0, 0, VIEW_W, VIEW_H);
   if (alarm > 40 || flash > 0) {
     const a = Math.max(flash * 0.45, (alarm - 40) / 140);
     const g = ctx.createRadialGradient(640, 370, 240, 640, 370, 720);
@@ -416,13 +740,14 @@ export function drawGame(ctx, game, t) {
   ctx.fillRect(0, 0, VIEW_W, VIEW_H);
   const room = s.rooms[s.roomIndex];
   drawFloor(ctx, room, t);
+  drawDust(ctx, t);
   drawExit(ctx, room, room.exit.open);
   drawPedestals(ctx, room, t);
   drawPaintings(ctx, room);
   drawCones(ctx, game.guards, game.cameras);
   drawLoot(ctx, room, t);
   drawWalls(ctx, room);
-  drawCameras(ctx, game.cameras);
+  drawCameras(ctx, game.cameras, t);
   drawGuards(ctx, game.guards);
   drawPlayer(ctx, game.player, t);
   drawHud(ctx, game);

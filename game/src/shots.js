@@ -35,6 +35,7 @@ export function setupShot(game, name, seed) {
     game.guards[0].x = 420; game.guards[0].y = 300; game.guards[0].angle = Math.PI / 2;
     game.guards[1].x = 980; game.guards[1].y = 480; game.guards[1].angle = Math.PI;
     game.guards[2].x = 700; game.guards[2].y = 220; game.guards[2].angle = Math.PI / 2;
+    game.guards[3].x = 1150; game.guards[3].y = 420; game.guards[3].angle = -Math.PI / 2;
     game.cameras[0].angle = Math.PI / 2 + 0.5;
     game.cameras[1].angle = Math.PI - 0.4;
     s.alarm = 35;
@@ -47,6 +48,7 @@ export function setupShot(game, name, seed) {
     game.guards[0].angle = Math.PI / 2;
     game.guards[1].angle = Math.PI;
     game.guards[2].angle = Math.PI / 2;
+    game.guards[3].angle = -Math.PI / 2;
     game.cameras[0].angle = Math.PI / 2 + 0.5;
     game.cameras[1].angle = Math.PI - 0.4;
     s.alarm = 35;
@@ -78,6 +80,8 @@ export function setupShot(game, name, seed) {
     game.guards[1].x = 980; game.guards[1].y = 300; game.guards[1].angle = -Math.PI / 2;
     game.guards[1].state = 'suspect';
     game.guards[2].x = 700; game.guards[2].y = 260; game.guards[2].angle = Math.PI / 2;
+    game.guards[3].x = 1150; game.guards[3].y = 300; game.guards[3].angle = Math.PI / 2;
+    game.guards[3].state = 'suspect';
     game.cameras[0].angle = Math.PI / 2 + 0.6;
     game.cameras[1].angle = Math.PI + 0.3;
     s.alarm = 82;
@@ -91,6 +95,7 @@ export function setupShot(game, name, seed) {
     game.guards[0].x = 640; game.guards[0].y = 420; game.guards[0].angle = Math.PI;
     game.guards[0].state = 'chase';
     game.guards[1].state = 'suspect';
+    game.guards[3].state = 'suspect';
     s.alarm = 82;
   } else if (name === 'escape') {
     // VAULT, the getaway: Garuda Mas just grabbed, exit door open and green,
@@ -102,6 +107,7 @@ export function setupShot(game, name, seed) {
     p.hasGaruda = true;
     game.guards[0].x = 520; game.guards[0].y = 600; game.guards[0].angle = 0;
     game.guards[1].x = 860; game.guards[1].y = 220; game.guards[1].angle = Math.PI;
+    game.guards[2].x = 700; game.guards[2].y = 560; game.guards[2].angle = Math.PI / 2;
     game.cameras[0].angle = Math.PI / 2 - 0.5;
     game.cameras[1].angle = -Math.PI / 2 + 0.5;
     const room = currentRoom(s);
@@ -116,6 +122,7 @@ export function setupShot(game, name, seed) {
     settle(game, 12);
     game.guards[0].angle = 0;
     game.guards[1].angle = Math.PI;
+    game.guards[2].angle = Math.PI / 2;
     game.cameras[0].angle = Math.PI / 2 - 0.5;
     game.cameras[1].angle = -Math.PI / 2 + 0.5;
     room.exit.open = true;

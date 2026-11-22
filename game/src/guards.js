@@ -98,7 +98,7 @@ export function updateGuard(guard, dt, px, py, room, smokes, disguised, sneaking
     targetY = py;
     speed = GUARD_PATROL_SPEED * 0.6;
   } else {
-    guard.suspect = Math.max(0, guard.suspect - dt * 0.8);
+    guard.suspect = Math.max(0, guard.suspect - dt * 0.45);
     const wp = guard.waypoints[guard.wp];
     targetX = wp[0];
     targetY = wp[1];

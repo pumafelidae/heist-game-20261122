@@ -9,8 +9,11 @@ Garuda Mas waits in the vault. Slip through three rooms — the lobby, the
 Nusantara painting gallery, the vault — past guards with vision cones and
 sweeping security cameras, take the loot and the Garuda Mas, and escape through
 the entrance before the alarm meter fills. The alarm recovers when you hide,
-tools cost a use (smoke bomb, camera EMP, staff disguise), and every room has
-more than one route.
+tools cost a use (smoke bomb, camera EMP, staff disguise) and there are only
+three of them for the whole run — no refills — and every room has more than
+one route. Medium difficulty: the alarm rises fast inside a cone and falls
+slowly, guards patrol faster and stay suspicious longer, and the gallery and
+vault each have an extra guard watching the loot.
 
 ## Play it
 
@@ -24,7 +27,8 @@ No network request is made; every script is a file under `game/` and every
 sound is synthesized in code.
 
 Controls: WASD / arrows to move, Shift to sneak, E to grab loot, click to walk
-to a point, 1 smoke bomb, 2 EMP, 3 disguise, P to pause, M to mute.
+to a point, 1 smoke bomb, 2 EMP, 3 disguise, P to pause, M to mute. The three
+tools are for the whole run — use them wisely.
 
 ## Hand it in
 
