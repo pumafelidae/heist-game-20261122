@@ -25,7 +25,13 @@ export function buildRooms() {
   rooms.push({
     name: 'LOBBI',
     sub: 'Selamat datang',
+    floor: 'wood',
     start: { x: 90, y: 620 },
+    decor: [
+      { kind: 'bench', x: 120, y: 660 },
+      { kind: 'plant', x: 1180, y: 120 },
+      { kind: 'plant', x: 60, y: 660 },
+    ],
     walls: [
       { x: 420, y: 92, w: 26, h: 210 }, // pillar wall north-west
       { x: 420, y: 420, w: 26, h: 284 }, // pillar wall south-west (gap = door)
@@ -67,7 +73,13 @@ export function buildRooms() {
   rooms.push({
     name: 'GALERI',
     sub: 'Lukisan Nusantara',
+    floor: 'stone',
     start: { x: 90, y: 375 },
+    decor: [
+      { kind: 'bench', x: 60, y: 300 },
+      { kind: 'plant', x: 60, y: 120 },
+      { kind: 'plant', x: 1220, y: 640 },
+    ],
     walls: [
       { x: 380, y: 92, w: 26, h: 190 },
       { x: 380, y: 400, w: 26, h: 304 },
@@ -107,6 +119,8 @@ export function buildRooms() {
       { x: 320, y: 420, waypoints: [[320, 420], [620, 420], [620, 620], [320, 620]], angle: 0 },
       { x: 960, y: 320, waypoints: [[960, 320], [960, 480], [1080, 480], [1080, 320]], angle: Math.PI },
       { x: 620, y: 260, waypoints: [[620, 260], [620, 320], [900, 320], [900, 260]], angle: Math.PI / 2 },
+      // East wing guard: loops tight around the Keris pajangan pedestal.
+      { x: 1080, y: 300, waypoints: [[1080, 300], [1080, 460], [1230, 460], [1230, 300]], angle: 0 },
     ],
     cameras: [
       { x: 640, y: 96, base: Math.PI / 2, phase: 0 },
@@ -119,7 +133,12 @@ export function buildRooms() {
   rooms.push({
     name: 'BRANKAS',
     sub: 'Garuda Mas',
+    floor: 'marble',
     start: { x: 90, y: 375 },
+    decor: [
+      { kind: 'plant', x: 60, y: 120 },
+      { kind: 'plant', x: 1180, y: 640 },
+    ],
     walls: [
       { x: 420, y: 92, w: 26, h: 240 },
       { x: 420, y: 450, w: 26, h: 254 },
@@ -148,6 +167,8 @@ export function buildRooms() {
     guards: [
       { x: 480, y: 560, waypoints: [[480, 560], [900, 560], [900, 640], [480, 640]], angle: 0 },
       { x: 900, y: 180, waypoints: [[900, 180], [480, 180], [480, 260], [900, 260]], angle: Math.PI },
+      // Vault warden: loops tight around the Garuda Mas plinth.
+      { x: 480, y: 300, waypoints: [[480, 300], [480, 480], [780, 480], [780, 300]], angle: 0 },
     ],
     cameras: [
       { x: 640, y: 96, base: Math.PI / 2, phase: 0.4 },

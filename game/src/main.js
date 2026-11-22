@@ -1,7 +1,7 @@
 // main.js — boot, the fixed-step loop, screens, and the glue between modules.
 // One job: run the game. No drawing, no world rules of its own.
 
-import { VIEW_W, VIEW_H, ALARM_MAX, ALARM_GUARD_RATE, ALARM_SNEAK_RATE, CAMERA_SEE_RATE } from './config.js';
+import { VIEW_W, VIEW_H, ALARM_MAX, ALARM_GUARD_RATE, ALARM_SNEAK_RATE, ALARM_DECAY, CAMERA_SEE_RATE } from './config.js';
 import { newGameState, countLoot, currentRoom, onCaught, onRoomCleared, onWin, roomLootLeft } from './world.js';
 import { makeGuards, updateGuard } from './guards.js';
 import { makeCameras, updateCamera, cameraSeesPlayer } from './cameras.js';
@@ -200,7 +200,7 @@ export class Game {
       s.alarm = Math.min(ALARM_MAX, s.alarm + dt * rate);
       if (s.alarm >= ALARM_MAX) s.alarmTrippedThisRoom = true;
     } else {
-      s.alarm = Math.max(0, s.alarm - dt * 13);
+      s.alarm = Math.max(0, s.alarm - dt * ALARM_DECAY);
     }
     if (!quiet) updateAlarmDrone(this.audio, s.alarm);
 
@@ -230,8 +230,7 @@ export class Game {
         s.roomClearTimer = 0;
         s.screen = 'roomclear';
         if (!quiet) { ensureAudio(this.audio); playRoomClear(this.audio); }
-        // +1 smoke for the next room.
-        this.player.smoke = Math.min(3, this.player.smoke + 1);
+        // No refill: the three tools must last the whole run.
       }
       clearEdges(input);
       return;
